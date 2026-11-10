@@ -1,0 +1,26 @@
+{
+    "name": "prova-tecnica/spider-sefaz-ba",
+    "description": "Projeto-base para prova técnica de extração do cadastro público da SEFAZ-BA.",
+    "type": "project",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.1"
+    },
+    "require-dev": {
+        "pestphp/pest": "^2.36"
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "autoload": {
+        "psr-4": {
+            "ProvaSpider\\": "src/"
+        }
+    },
+    "scripts": {
+        "test": "pest",
+        "consultar": "@php bin/consultar.php"
+    }
+}
