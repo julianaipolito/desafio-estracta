@@ -59,6 +59,13 @@ it('não usa o CNPJ da entrada quando a página não o exibe', function () {
     expect($cadastro->cnpj)->toBeNull();
 });
 
+it('recusa o cadastro de um CNPJ diferente do consultado', function () {
+    $http = new FakeHttpClient([paginaDoFormulario(), paginaDaFixture('resultado-cadastro.html')]);
+
+    expect(fn () => (new SefazBaSpider($http))->consultar(new Consulta('11.222.333/0001-81')))
+        ->toThrow(RespostaInesperada::class, 'diferente do consultado');
+});
+
 it('classifica as páginas sem cadastro', function (string $fixture, string $excecao) {
     $http = new FakeHttpClient([paginaDoFormulario(), paginaDaFixture($fixture)]);
 

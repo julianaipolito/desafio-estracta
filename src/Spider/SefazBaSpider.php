@@ -7,6 +7,7 @@ namespace ProvaSpider\Spider;
 use ProvaSpider\Contract\HttpClient;
 use ProvaSpider\Contract\Spider;
 use ProvaSpider\Exception\FalhaHttp;
+use ProvaSpider\Exception\RespostaInesperada;
 use ProvaSpider\Exception\ServicoIndisponivel;
 use ProvaSpider\Extrator\ExtratorCadastroBa;
 use ProvaSpider\Html\DecodificadorHtml;
@@ -43,9 +44,17 @@ final class SefazBaSpider implements Spider
         $resposta = $this->http->postForm(self::URL_RESULTADO, $this->camposDoFormulario($consulta));
         $this->exigirSucesso($resposta, 'consultar o CNPJ');
 
-        return $this->extrator->extrair(
+        $cadastro = $this->extrator->extrair(
             DecodificadorHtml::paraUtf8($resposta->body, $resposta->header('Content-Type'))
         );
+
+        if ($cadastro->cnpj !== null && $cadastro->cnpj !== $consulta->cnpj) {
+            throw new RespostaInesperada(
+                "A SEFAZ-BA devolveu o cadastro do CNPJ {$cadastro->cnpj}, diferente do consultado."
+            );
+        }
+
+        return $cadastro;
     }
 
     /**
