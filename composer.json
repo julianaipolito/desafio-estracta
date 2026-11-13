@@ -33,7 +33,8 @@
         }
     },
     "scripts": {
-        "test": "pest",
+        "test": "pest --exclude-group=integration",
+        "test:integration": "pest --group=integration",
         "consultar": "@php bin/consultar.php"
     }
 }
