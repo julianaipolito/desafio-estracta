@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use ProvaSpider\Exception\CadastroNaoEncontrado;
+use ProvaSpider\Exception\EntradaInvalida;
 use ProvaSpider\Exception\RespostaInesperada;
 use ProvaSpider\Extrator\ExtratorCadastroBa;
 use ProvaSpider\Html\DecodificadorHtml;
@@ -63,6 +65,13 @@ it('aceita a atividade na mesma célula do rótulo', function () {
 
     expect($cadastro->atividadeEconomica)->toBe('4721104 - Comércio varejista');
 });
+
+it('reconhece as páginas de aviso do portal', function (string $fixture, string $excecao) {
+    expect(fn () => extrairFixture($fixture))->toThrow($excecao);
+})->with([
+    'CNPJ sem cadastro' => ['consulta-vazia.html', CadastroNaoEncontrado::class],
+    'CNPJ recusado pelo portal' => ['cnpj-incorreto.html', EntradaInvalida::class],
+]);
 
 it('lança RespostaInesperada sem cadastro nem aviso conhecido', function (string $html) {
     (new ExtratorCadastroBa())->extrair($html);

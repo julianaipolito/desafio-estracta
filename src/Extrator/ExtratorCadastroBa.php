@@ -7,6 +7,9 @@ namespace ProvaSpider\Extrator;
 use DOMDocument;
 use DOMElement;
 use DOMXPath;
+use ProvaSpider\Exception\CadastroNaoEncontrado;
+use ProvaSpider\Exception\ConsultaException;
+use ProvaSpider\Exception\EntradaInvalida;
 use ProvaSpider\Exception\RespostaInesperada;
 use ProvaSpider\ValueObject\CadastroContribuinte;
 
@@ -21,6 +24,10 @@ use ProvaSpider\ValueObject\CadastroContribuinte;
  */
 final class ExtratorCadastroBa
 {
+    /** Textos das páginas de aviso do portal, já na forma de chave(). */
+    private const AVISO_SEM_CADASTRO = 'nenhum registro encontrado';
+    private const AVISO_CNPJ_INCORRETO = 'cnpj incorreto';
+
     /** Ordem das partes do endereço do estabelecimento no texto final. */
     private const PARTES_ENDERECO = ['Logradouro', 'Número', 'Complemento', 'Bairro/Distrito', 'Município', 'UF', 'CEP'];
 
@@ -32,6 +39,8 @@ final class ExtratorCadastroBa
     ];
 
     /**
+     * @throws CadastroNaoEncontrado
+     * @throws EntradaInvalida
      * @throws RespostaInesperada
      */
     public function extrair(string $html): CadastroContribuinte
@@ -42,7 +51,7 @@ final class ExtratorCadastroBa
         $inscricao = $this->identificador($this->campo($campos, 'Inscrição Estadual')['valor'] ?? null);
         $razaoSocial = $this->campo($campos, 'Razão Social')['valor'] ?? null;
         if ($inscricao === null && $razaoSocial === null) {
-            throw new RespostaInesperada('A resposta da SEFAZ-BA não contém os dados de um cadastro.');
+            throw $this->motivoDaAusencia($xpath);
         }
 
         return new CadastroContribuinte(
@@ -168,6 +177,27 @@ final class ExtratorCadastroBa
         }
 
         return $this->normalizar($seguinte->textContent);
+    }
+
+    private function motivoDaAusencia(DOMXPath $xpath): ConsultaException
+    {
+        $texto = '';
+        foreach ($xpath->query('//body//text()[not(ancestor::script) and not(ancestor::style)]') ?: [] as $no) {
+            $texto .= ' ' . $no->nodeValue;
+        }
+        $texto = $this->chave($texto);
+
+        return match (true) {
+            str_contains($texto, self::AVISO_SEM_CADASTRO) => new CadastroNaoEncontrado(
+                'Nenhum cadastro encontrado na SEFAZ-BA para o CNPJ informado.'
+            ),
+            str_contains($texto, self::AVISO_CNPJ_INCORRETO) => new EntradaInvalida(
+                'A SEFAZ-BA recusou o CNPJ informado: dígito verificador incorreto.'
+            ),
+            default => new RespostaInesperada(
+                'A resposta da SEFAZ-BA não contém um cadastro nem uma mensagem conhecida do portal.'
+            ),
+        };
     }
 
     private function tabelaDe(DOMElement $celula): ?DOMElement
