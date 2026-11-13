@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use ProvaSpider\Exception\CadastroNaoEncontrado;
 use ProvaSpider\Exception\EntradaInvalida;
+use ProvaSpider\Exception\MultiplosCadastrosEncontrados;
 use ProvaSpider\Exception\RespostaInesperada;
 use ProvaSpider\Extrator\ExtratorCadastroBa;
 use ProvaSpider\Html\DecodificadorHtml;
@@ -64,6 +65,15 @@ it('aceita a atividade na mesma célula do rótulo', function () {
     );
 
     expect($cadastro->atividadeEconomica)->toBe('4721104 - Comércio varejista');
+});
+
+it('recusa a página com mais de uma inscrição estadual', function () {
+    try {
+        extrairFixture('resultado-multiplas-ie.html');
+        $this->fail('Deveria ter lançado MultiplosCadastrosEncontrados.');
+    } catch (MultiplosCadastrosEncontrados $e) {
+        expect($e->inscricoes)->toBe(['001234567', '009876543']);
+    }
 });
 
 it('reconhece as páginas de aviso do portal', function (string $fixture, string $excecao) {

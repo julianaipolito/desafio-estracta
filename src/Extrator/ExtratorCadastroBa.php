@@ -10,6 +10,7 @@ use DOMXPath;
 use ProvaSpider\Exception\CadastroNaoEncontrado;
 use ProvaSpider\Exception\ConsultaException;
 use ProvaSpider\Exception\EntradaInvalida;
+use ProvaSpider\Exception\MultiplosCadastrosEncontrados;
 use ProvaSpider\Exception\RespostaInesperada;
 use ProvaSpider\ValueObject\CadastroContribuinte;
 
@@ -41,6 +42,7 @@ final class ExtratorCadastroBa
     /**
      * @throws CadastroNaoEncontrado
      * @throws EntradaInvalida
+     * @throws MultiplosCadastrosEncontrados
      * @throws RespostaInesperada
      */
     public function extrair(string $html): CadastroContribuinte
@@ -48,14 +50,18 @@ final class ExtratorCadastroBa
         $xpath = $this->carregar($html);
         $campos = $this->camposRotulados($xpath);
 
-        $inscricao = $this->identificador($this->campo($campos, 'Inscrição Estadual')['valor'] ?? null);
+        $inscricoes = $this->inscricoes($campos);
+        if (count($inscricoes) > 1) {
+            throw new MultiplosCadastrosEncontrados($inscricoes);
+        }
+
         $razaoSocial = $this->campo($campos, 'Razão Social')['valor'] ?? null;
-        if ($inscricao === null && $razaoSocial === null) {
+        if ($inscricoes === [] && $razaoSocial === null) {
             throw $this->motivoDaAusencia($xpath);
         }
 
         return new CadastroContribuinte(
-            inscricaoEstadual: $inscricao,
+            inscricaoEstadual: $inscricoes[0] ?? null,
             cnpj: $this->identificador($this->campo($campos, 'CNPJ')['valor'] ?? null),
             razaoSocial: $razaoSocial,
             nomeFantasia: $this->campo($campos, 'Nome Fantasia')['valor'] ?? null,
@@ -129,6 +135,24 @@ final class ExtratorCadastroBa
         }
 
         return null;
+    }
+
+    /**
+     * @param list<Campo> $campos
+     * @return list<string>
+     */
+    private function inscricoes(array $campos): array
+    {
+        $chave = $this->chave('Inscrição Estadual');
+        $inscricoes = [];
+        foreach ($campos as $campo) {
+            $inscricao = $campo['rotulo'] === $chave ? $this->identificador($campo['valor']) : null;
+            if ($inscricao !== null && !in_array($inscricao, $inscricoes, true)) {
+                $inscricoes[] = $inscricao;
+            }
+        }
+
+        return $inscricoes;
     }
 
     /**
