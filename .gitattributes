@@ -1,0 +1,4 @@
+* text=auto eol=lf
+
+# Fixtures: bytes idênticos aos do portal (CRLF, UTF-8 ou Windows-1252).
+tests/Fixtures/** -text
