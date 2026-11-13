@@ -13,6 +13,7 @@ use ProvaSpider\Extrator\ExtratorCadastroBa;
 use ProvaSpider\Html\DecodificadorHtml;
 use ProvaSpider\Http\GuzzleHttpClient;
 use ProvaSpider\Http\HttpResponse;
+use ProvaSpider\Http\RetryingHttpClient;
 use ProvaSpider\ValueObject\CadastroContribuinte;
 use ProvaSpider\ValueObject\Consulta;
 
@@ -32,7 +33,7 @@ final class SefazBaSpider implements Spider
     private const STATUS_INDISPONIVEL = [502, 503, 504];
 
     public function __construct(
-        private readonly HttpClient $http = new GuzzleHttpClient(),
+        private readonly HttpClient $http = new RetryingHttpClient(new GuzzleHttpClient()),
         private readonly ExtratorCadastroBa $extrator = new ExtratorCadastroBa(),
     ) {
     }
