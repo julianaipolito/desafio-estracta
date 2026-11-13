@@ -1,95 +1,119 @@
 # Desafio estracta
 
-## Objetivo
+Spider em PHP que consulta, **exclusivamente por CNPJ**, o cadastro público de contribuintes do ICMS da Bahia e devolve um objeto de valor imutável (`CadastroContribuinte`).
 
-Implementar um spider em PHP que realize a consulta pública ao cadastro de contribuintes da Bahia **exclusivamente por CNPJ**, extraia os dados da resposta e os retorne em um **objeto de valor imutável** (`CadastroContribuinte`).
+- Portal: <https://portal.sefaz.ba.gov.br/scripts/cadastro/cadastroBa/consultaBa.asp>
+- Enunciado original: [docs/enunciado.md](docs/enunciado.md)
+- Como desenvolvi, decisões e dificuldades: [docs/desenvolvimento.md](docs/desenvolvimento.md)
 
-Página inicial: <https://portal.sefaz.ba.gov.br/scripts/cadastro/cadastroBa/consultaBa.asp>
+## Como executar
 
-Este repositório é o projeto-base da avaliação. A consulta HTTP e a extração estão pendentes em [SefazBaSpider.php](src/Spider/SefazBaSpider.php); implementá-las é a tarefa do candidato.
-
-## Preparação e execução
-
-Requisitos: PHP 8.1 ou superior, Composer 2 e extensões exigidas pelas dependências, incluindo DOM, XML e mbstring. O projeto utiliza Pest 2, compatível com PHP 8.1. Instale também as extensões requeridas pela biblioteca HTTP escolhida.
-
-Para instalar as dependências e executar os testes iniciais:
+Requisitos: PHP 8.1 ou superior com as extensões `dom`, `mbstring`, `curl` e `openssl`, e Composer 2.
 
 ```bash
 composer install
 composer test
+php bin/consultar.php 13.504.675/0001-10
 ```
 
-Após implementar o spider, execute a consulta:
+O CNPJ pode ser informado com ou sem máscara. Em caso de sucesso, o comando imprime o JSON:
+
+```json
+{
+    "inscricaoEstadual": "000665571",
+    "cnpj": "13504675000110",
+    "razaoSocial": "EMPRESA BAIANA DE ÁGUAS E SANEAMENTO S/A EMBASA",
+    "nomeFantasia": "EMBASA",
+    "situacaoCadastral": "ATIVO",
+    "endereco": "AVENIDA LUIS VIANA, 420, EDIF SEDUR, CENTRO ADMINISTRATIVO DA BAHIA, SALVADOR, BA, 41745-010",
+    "atividadeEconomica": "3600601 - Captação, tratamento e distribuição de água",
+    "regimeApuracao": "C/CORRENTE FISCAL"
+}
+```
+
+Em caso de erro, escreve a mensagem em `stderr` e encerra com código 1.
+
+`composer test` roda a suíte sem acessar a internet. Os testes que acessam o portal real ficam separados:
 
 ```bash
-php bin/consultar.php CNPJ
+composer test:integration
+SEFAZ_BA_CNPJ=15139629000194 composer test:integration   # outro CNPJ
 ```
 
-Substitua `CNPJ` pelo número a consultar, com ou sem máscara. Se houver espaços na entrada, use aspas. O comando recebe somente o CNPJ, sem argumento para selecionar o tipo de consulta.
+> No Windows, se o PHP não tiver um pacote de certificados configurado, o cURL falha com `unable to get local issuer certificate`. Basta apontar `curl.cainfo` no `php.ini` para um `cacert.pem`.
 
-Em caso de sucesso, o comando imprime o resultado em JSON. Em caso de erro, escreve uma mensagem na saída de erro (`stderr`) e encerra com código 1. Antes da implementação, uma entrada com formato válido resulta no aviso de que o spider ainda não foi implementado.
+## Como o portal responde
 
-## Escopo da implementação
+Mapeado inspecionando o formulário e fazendo as requisições manualmente:
 
-1. Inspecionar o formulário e identificar método, parâmetros e eventuais etapas intermediárias da consulta por CNPJ.
-2. Realizar a consulta exclusivamente por CNPJ.
-3. Extrair os dados do cadastro retornado, tratar a codificação da página e normalizar espaços e máscaras sem perder zeros à esquerda.
-4. Construir e retornar `CadastroContribuinte` pelo contrato `Spider::consultar()`. O retorno público do spider deve ser o objeto, e a conversão para JSON deve acontecer na camada de saída.
-5. Distinguir ausência de cadastro, entrada inválida, falha HTTP, indisponibilidade e resposta inesperada. Usar exceções claras; não converter falhas em um cadastro vazio ou em dados simulados.
-6. Definir tempo limite para as requisições e limite de redirecionamentos. Caso implemente novas tentativas, limitar sua quantidade e aplicá-las apenas a falhas recuperáveis.
-7. Escrever os testes em **Pest**, com respostas locais e transporte substituível para que a suíte padrão rode sem acessar a SEFAZ.
-
-O candidato pode adicionar dependências, classes e exceções, separar a comunicação HTTP da extração e ajustar o modelo conforme os dados reais. Deve preservar a finalidade do contrato e tornar as alterações compreensíveis pelo código e pelos testes. Não é necessário usar um framework, banco de dados, interface web ou execução em lote.
-
-## Contrato e dados esperados
-
-```php
-public function consultar(Consulta $consulta): CadastroContribuinte;
-```
-
-`Consulta` contém o CNPJ na propriedade `cnpj`. A validação fornecida é apenas estrutural: remove pontuação usual, verifica caracteres e o tamanho de 14 dígitos. Não há validação de dígitos verificadores no projeto-base.
-
-O objeto de valor fornecido é `final`, tem propriedades `readonly` e implementa `JsonSerializable`. O esquema inicial é:
-
-| Propriedade | Conteúdo proposto |
+| Etapa | O que acontece |
 | --- | --- |
-| `inscricaoEstadual` | Inscrição estadual |
-| `cnpj` | CNPJ do contribuinte |
-| `razaoSocial` | Razão social ou nome do contribuinte |
-| `nomeFantasia` | Nome fantasia |
-| `situacaoCadastral` | Situação do cadastro |
-| `endereco` | Endereço publicado |
-| `atividadeEconomica` | Atividade econômica publicada |
-| `regimeApuracao` | Regime de apuração, quando disponível |
+| `GET consultaBa.asp` | Formulário em ISO-8859-1. Cria a sessão ASP (`ASPSESSIONID...`). |
+| `POST result.asp` | Campos `sefp=1`, `estado=BA`, `CGC=<14 dígitos>` e `B1=CNPJ  ->`. O servidor escolhe o tipo de consulta pelo nome do botão (`B1`). |
+| Cadastro encontrado | `200`, página em UTF-8 (declarado só na `<meta>`; o header não informa charset). |
+| CNPJ sem cadastro | `302` para `consulta_vazia.htm`: "Nenhum registro encontrado !". |
+| Dígito verificador errado | `302` para `cnpj_incorreto.htm`: "Cnpj incorreto - dígito verificador !". |
+| Sem `B1`, CNPJ com máscara ou alfanumérico | `302` para `param_errado.htm`, que hoje responde `404`. |
 
-O esquema é uma referência inicial e deve ser validado com o cadastro retornado pelo portal. O mapeamento dos campos e suas transformações deve estar implementado no código e coberto pelos testes. Campos ausentes devem ser representados por `null`. Identificadores devem permanecer como strings para preservar zeros à esquerda. O CNPJ informado na entrada não deve ser apresentado como dado extraído se não aparecer no resultado.
+O portal não exige captcha. Hoje ele também aceita o POST sem o cookie de sessão, mas o spider reproduz o fluxo do navegador (abre o formulário antes) para não depender disso.
 
-A inscrição estadual é um dado a extrair do resultado, quando disponível; a entrada da consulta é sempre o CNPJ.
+## Arquitetura
 
-O contrato inicial representa um cadastro por consulta.
+```
+bin/consultar.php           entrada (CNPJ) e saída (JSON ou stderr + código 1)
+└── SefazBaSpider           fluxo da consulta e interpretação do status HTTP
+    ├── HttpClient          contrato do transporte (tests/Fakes/FakeHttpClient nos testes)
+    │   └── RetryingHttpClient → GuzzleHttpClient   novas tentativas | timeout, redirects, cookies
+    ├── DecodificadorHtml   bytes da resposta → UTF-8
+    └── ExtratorCadastroBa  HTML → CadastroContribuinte ou exceção (não conhece HTTP)
+```
 
-## Testes e aceite
+- **Transporte** (`src/Http`): Guzzle com `timeout` de 15 s, `connect_timeout` de 5 s, no máximo 3 redirecionamentos e `CookieJar` para a sessão. O redirecionamento não é estrito: o `302` depois do POST vira GET, como no navegador (as páginas `.htm` respondem `405` a POST). Respostas 4xx/5xx não viram exceção aqui; quem decide é o spider.
+- **Novas tentativas**: no máximo 3 tentativas, com espera de 0,5 s e 1 s, só para falha de conexão, tempo limite e status 502, 503 e 504. A consulta é somente leitura, então repetir o POST é seguro. 4xx, 500 e HTML inesperado não são repetidos.
+- **Extração** (`src/Extrator`): `DOMDocument` + `DOMXPath`, localizando cada valor pelo rótulo (`<b>Rótulo:</b>&nbsp;valor`), não pela posição das células.
 
-Todos os testes devem ser escritos em **Pest** e executados com `composer test`. Os testes iniciais verificam somente a validação estrutural da entrada e a serialização do objeto de valor. Cabe ao candidato acrescentar os testes da consulta e da extração.
+## Mapeamento dos campos
 
-Os testes devem cobrir:
+| Propriedade | Rótulo na página | Transformação |
+| --- | --- | --- |
+| `inscricaoEstadual` | Inscrição Estadual | Primeiro número, só os dígitos: `000.478.696 NO (Inscrição Única)` → `000478696` |
+| `cnpj` | CNPJ | Só os dígitos. `null` se a página não exibir (nunca vem da entrada). |
+| `razaoSocial` | Razão Social | Espaços e `&nbsp;` normalizados, como em todos os campos |
+| `nomeFantasia` | Nome Fantasia | |
+| `situacaoCadastral` | Situação Cadastral Vigente | |
+| `endereco` | Logradouro, Número, Complemento, Bairro/Distrito, Município, UF e CEP | Partes não vazias unidas por vírgula, lidas só da tabela do estabelecimento |
+| `atividadeEconomica` | Atividade Econômica Principal | Código e descrição como publicados (o valor fica na linha seguinte ao rótulo) |
+| `regimeApuracao` | Forma de pagamento | Como publicado, ex.: `C/CORRENTE FISCAL` (regime de conta corrente fiscal) |
 
-- Montagem da requisição por CNPJ e manutenção de sessão quando aplicável.
-- Extração de cadastro a partir de HTML local representativo, incluindo acentos e campos ausentes.
-- Mapeamento e retorno do objeto de valor, com preservação de zeros nos identificadores.
-- Resposta sem cadastro, falha de transporte, status HTTP de erro e HTML inesperado.
+Campo vazio ou ausente vira `null`. Identificadores são strings do início ao fim, para preservar zeros à esquerda.
 
-As respostas HTML utilizadas nos testes (fixtures) devem ser sintéticas ou anonimizadas e identificadas como tal. A suíte padrão deve funcionar sem acesso à internet. Testes de integração com o portal, se incluídos, devem ter execução opcional e separada. As fixtures servem para testar a extração; o spider deve realizar a consulta real quando executado pelo comando.
+## Erros
 
-## Entrega
+Todas as exceções da consulta estendem `ConsultaException`.
 
-O projeto deve se chamar **Desafio estracta** e ser salvo em um **repositório Git público do próprio candidato**, contendo o código, o arquivo `composer.lock` atualizado, os testes em Pest e as fixtures. O link do repositório do projeto deve ser enviado por e-mail para **[mario.aquino@e-stracta.com](mailto:mario.aquino@e-stracta.com)** para avaliação. Deve ser possível clonar o repositório, instalar as dependências com `composer install`, executar os testes com `composer test` e consultar por CNPJ com o comando indicado neste documento.
+| Situação | Exceção |
+| --- | --- |
+| CNPJ com formato ou dígito verificador inválido (antes de consultar) | `InvalidArgumentException` (da `Consulta`) |
+| Portal informa que não há cadastro | `CadastroNaoEncontrado` |
+| Portal recusa o CNPJ | `EntradaInvalida` |
+| Status 4xx, 500 ou redirecionamentos acima do limite | `FalhaHttp` (com o `status`) |
+| Falha de conexão, tempo limite, 502, 503 ou 504 | `ServicoIndisponivel` |
+| Página sem cadastro nem aviso conhecido, ou com o cadastro de outro CNPJ | `RespostaInesperada` |
+| Mais de uma inscrição estadual na mesma página | `MultiplosCadastrosEncontrados` |
 
-O histórico de commits e os pull requests (PRs) também serão avaliados. Organize o desenvolvimento em commits que permitam acompanhar a evolução da solução e utilize PRs para apresentar e revisar as alterações.
+## Testes
 
-A aplicação e os testes entregues serão avaliados. Não é necessário preencher formulário ou relatório de entrega.
+```
+tests/
+├── Unit/
+│   ├── ConsultaTest, CadastroContribuinteTest   entrada e objeto de valor (inclui os testes da base)
+│   ├── DecodificadorHtmlTest                    charset do header, da <meta> e dos bytes
+│   ├── ExtratorCadastroBaTest                   mapeamento, acentos, zeros, campos ausentes, avisos
+│   ├── GuzzleHttpClientTest                     formulário, cookie de sessão, 302 após POST, limites (MockHandler)
+│   ├── RetryingHttpClientTest                   quando repete e quando não repete
+│   └── SefazBaSpiderTest                        requisições montadas e classificação das respostas
+├── Integration/                                 portal real, grupo "integration"
+└── Fixtures/sefaz-ba/                           HTML identificado no topo de cada arquivo
+```
 
-Todos os testes entregues serão analisados e receberão uma devolutiva no resultado da entrevista.
-
-O candidato deve escrever um texto livre explicando como desenvolveu a aplicação, incluindo sua abordagem, decisões técnicas, dificuldades e aprendizados. Serão consideradas a clareza da explicação, a fundamentação das decisões e a coerência com a implementação entregue.
-
+As fixtures `resultado-*.html` têm a estrutura copiada da página real, com todos os dados trocados por valores fictícios. `consulta-vazia.html` e `cnpj-incorreto.html` são cópias das páginas de aviso, que não têm dados de contribuinte. `pagina-manutencao.html` é sintética e está em Windows-1252.
