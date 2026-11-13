@@ -27,6 +27,11 @@
             "ProvaSpider\\": "src/"
         }
     },
+    "autoload-dev": {
+        "psr-4": {
+            "ProvaSpider\\Tests\\": "tests/"
+        }
+    },
     "scripts": {
         "test": "pest",
         "consultar": "@php bin/consultar.php"
